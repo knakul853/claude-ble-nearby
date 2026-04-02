@@ -1,0 +1,9 @@
+{
+  "name": "claude-ble-nearby",
+  "description": "Discover nearby devs and chat via Bluetooth Low Energy",
+  "version": "0.1.0",
+  "author": {
+    "name": "nakulbharti"
+  },
+  "keywords": ["ble", "bluetooth", "nearby", "chat", "collaboration"]
+}

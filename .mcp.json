@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ble-nearby": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/mcp-server.js"]
+    }
+  }
+}
