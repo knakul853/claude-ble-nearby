@@ -79,7 +79,7 @@ server.tool('ble_status', 'Get BLE adapter and connection status', {}, async () 
         },
     ],
 }));
-server.tool('ble_scan', 'List nearby discovered peers', {}, async () => {
+server.tool('ble_scan', 'List nearby discovered Claude Code peers', {}, async () => {
     if (!scanner.isScanning()) {
         await scanner.start();
         await advertiser.start();
@@ -92,6 +92,21 @@ server.tool('ble_scan', 'List nearby discovered peers', {}, async () => {
     }));
     return {
         content: [{ type: 'text', text: JSON.stringify({ peers }) }],
+    };
+});
+server.tool('ble_scan_all', 'List ALL nearby BLE devices (for debugging). Shows both Claude Code peers and other BLE devices.', {}, async () => {
+    if (!scanner.isScanning()) {
+        await scanner.start();
+        await advertiser.start();
+    }
+    const devices = scanner.getAllDevices().map((d) => ({
+        name: d.name,
+        id: d.id,
+        rssi: d.rssi,
+        claudePeer: d.isClaudePeer,
+    }));
+    return {
+        content: [{ type: 'text', text: JSON.stringify({ devices, total: devices.length }) }],
     };
 });
 server.tool('ble_pair_request', 'Send a pairing request to a discovered peer', { peerId: z.string().describe('The BLE ID of the peer to pair with') }, async ({ peerId }) => {

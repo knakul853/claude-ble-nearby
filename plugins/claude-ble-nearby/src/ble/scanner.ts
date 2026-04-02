@@ -6,10 +6,12 @@ export interface DiscoveredPeer {
   id: string;
   name: string;
   rssi: number;
+  isClaudePeer?: boolean;
 }
 
 export class BleScanner extends EventEmitter {
   private scanning = false;
+  private allDevices: Map<string, DiscoveredPeer> = new Map();
 
   async start(): Promise<void> {
     if (this.scanning) return;
@@ -18,13 +20,23 @@ export class BleScanner extends EventEmitter {
 
     noble.on('discover', (peripheral) => {
       const name = peripheral.advertisement.localName;
-      if (!name || !name.startsWith(PEER_NAME_PREFIX)) return;
+      if (!name) return;
 
-      this.emit('discovered', {
+      const isClaudePeer = name.startsWith(PEER_NAME_PREFIX);
+      const displayName = isClaudePeer ? name.slice(PEER_NAME_PREFIX.length) : name;
+
+      const peer: DiscoveredPeer = {
         id: peripheral.id,
-        name: name.slice(PEER_NAME_PREFIX.length),
+        name: displayName,
         rssi: peripheral.rssi,
-      } satisfies DiscoveredPeer);
+        isClaudePeer,
+      };
+
+      this.allDevices.set(peripheral.id, peer);
+
+      if (isClaudePeer) {
+        this.emit('discovered', peer);
+      }
     });
 
     await noble.startScanningAsync([], true);
@@ -36,6 +48,10 @@ export class BleScanner extends EventEmitter {
     await noble.stopScanningAsync();
     noble.removeAllListeners('discover');
     this.scanning = false;
+  }
+
+  getAllDevices(): DiscoveredPeer[] {
+    return Array.from(this.allDevices.values());
   }
 
   isScanning(): boolean {

@@ -3,19 +3,27 @@ import { EventEmitter } from 'node:events';
 import { PEER_NAME_PREFIX } from './constants.js';
 export class BleScanner extends EventEmitter {
     scanning = false;
+    allDevices = new Map();
     async start() {
         if (this.scanning)
             return;
         await this.waitForPoweredOn();
         noble.on('discover', (peripheral) => {
             const name = peripheral.advertisement.localName;
-            if (!name || !name.startsWith(PEER_NAME_PREFIX))
+            if (!name)
                 return;
-            this.emit('discovered', {
+            const isClaudePeer = name.startsWith(PEER_NAME_PREFIX);
+            const displayName = isClaudePeer ? name.slice(PEER_NAME_PREFIX.length) : name;
+            const peer = {
                 id: peripheral.id,
-                name: name.slice(PEER_NAME_PREFIX.length),
+                name: displayName,
                 rssi: peripheral.rssi,
-            });
+                isClaudePeer,
+            };
+            this.allDevices.set(peripheral.id, peer);
+            if (isClaudePeer) {
+                this.emit('discovered', peer);
+            }
         });
         await noble.startScanningAsync([], true);
         this.scanning = true;
@@ -26,6 +34,9 @@ export class BleScanner extends EventEmitter {
         await noble.stopScanningAsync();
         noble.removeAllListeners('discover');
         this.scanning = false;
+    }
+    getAllDevices() {
+        return Array.from(this.allDevices.values());
     }
     isScanning() {
         return this.scanning;
