@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "ble-nearby": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["dist/mcp-server.js"]
+      "command": "bash",
+      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}\" && [ -d node_modules ] || npm install --production --silent && node dist/mcp-server.js"]
     }
   }
 }
