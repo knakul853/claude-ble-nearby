@@ -1,0 +1,5 @@
+#!/bin/bash
+# Outputs a brief nearby peer summary for the session start context.
+# This runs async so it won't block session startup.
+
+echo '{"additionalContext": "BLE Nearby plugin active. Use /nearby to see who is around, or ask to chat with a nearby dev."}'
