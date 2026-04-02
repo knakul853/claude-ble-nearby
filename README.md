@@ -13,11 +13,22 @@
 
 ## Install
 
-```bash
-claude plugin install github:knakul853/claude-ble-nearby
+**Step 1** — Add the marketplace (one-time):
+```
+/plugin marketplace add knakul853/claude-ble-nearby
 ```
 
-Restart Claude Code. Done.
+**Step 2** — Install the plugin:
+```
+/plugin install claude-ble-nearby
+```
+
+**Step 3** — Restart Claude Code. Done.
+
+**Alternative — local dev install:**
+```bash
+claude --plugin-dir /path/to/claude-ble-nearby/plugins/claude-ble-nearby
+```
 
 ## What It Does
 
