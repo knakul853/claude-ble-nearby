@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-ble-nearby",
+  "description": "Claude Code plugin for BLE-based nearby dev discovery and chat",
+  "owner": {
+    "name": "knakul853"
+  },
+  "plugins": [
+    {
+      "name": "claude-ble-nearby",
+      "description": "Discover nearby devs and chat via Bluetooth Low Energy",
+      "category": "collaboration",
+      "source": "./plugins/claude-ble-nearby"
+    }
+  ]
+}
