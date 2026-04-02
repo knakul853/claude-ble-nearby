@@ -3,7 +3,8 @@
     "ble-nearby": {
       "type": "stdio",
       "command": "node",
-      "args": ["dist/mcp-server.js"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
     }
   }
 }
