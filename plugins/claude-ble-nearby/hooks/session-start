@@ -1,11 +1,10 @@
 #!/bin/bash
 # Bootstrap native dependencies on first run, then show status.
-# Runs async so it won't block session startup.
 
 PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ ! -d "$PLUGIN_DIR/node_modules" ]; then
-  npm install --production --prefix "$PLUGIN_DIR" >/dev/null 2>&1
+  npm install --production --prefix "$PLUGIN_DIR" 2>&1
 fi
 
 echo '{"additionalContext": "BLE Nearby plugin active. Use /nearby to see who is around, or ask to chat with a nearby dev."}'
