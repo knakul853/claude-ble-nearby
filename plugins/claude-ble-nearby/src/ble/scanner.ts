@@ -1,6 +1,6 @@
 import noble from '@stoprocent/noble';
 import { EventEmitter } from 'node:events';
-import { NORDIC_UART_SERVICE_UUID } from './constants.js';
+import { PEER_NAME_PREFIX } from './constants.js';
 
 export interface DiscoveredPeer {
   id: string;
@@ -18,19 +18,16 @@ export class BleScanner extends EventEmitter {
 
     noble.on('discover', (peripheral) => {
       const name = peripheral.advertisement.localName;
-      if (!name) return;
-
-      const serviceUuids = peripheral.advertisement.serviceUuids || [];
-      if (!serviceUuids.includes(NORDIC_UART_SERVICE_UUID)) return;
+      if (!name || !name.startsWith(PEER_NAME_PREFIX)) return;
 
       this.emit('discovered', {
         id: peripheral.id,
-        name,
+        name: name.slice(PEER_NAME_PREFIX.length),
         rssi: peripheral.rssi,
       } satisfies DiscoveredPeer);
     });
 
-    await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
+    await noble.startScanningAsync([], true);
     this.scanning = true;
   }
 

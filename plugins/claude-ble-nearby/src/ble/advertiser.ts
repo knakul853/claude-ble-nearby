@@ -5,6 +5,7 @@ import {
   NORDIC_UART_RX_UUID,
   NORDIC_UART_TX_UUID,
   META_CHARACTERISTIC_UUID,
+  PEER_NAME_PREFIX,
 } from './constants.js';
 
 export class BleAdvertiser extends EventEmitter {
@@ -63,7 +64,7 @@ export class BleAdvertiser extends EventEmitter {
     });
 
     return new Promise<void>((resolve, reject) => {
-      bleno.startAdvertising(this.localName, [NORDIC_UART_SERVICE_UUID], (err?: Error | null) => {
+      bleno.startAdvertising(PEER_NAME_PREFIX + this.localName, [NORDIC_UART_SERVICE_UUID], (err?: Error | null) => {
         if (err) {
           reject(err);
           return;

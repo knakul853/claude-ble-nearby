@@ -1,4 +1,5 @@
 export declare const NORDIC_UART_SERVICE_UUID = "6e400001b5a3f393e0a9e50e24dcca9e";
+export declare const PEER_NAME_PREFIX = "cc-";
 export declare const NORDIC_UART_RX_UUID = "6e400002b5a3f393e0a9e50e24dcca9e";
 export declare const NORDIC_UART_TX_UUID = "6e400003b5a3f393e0a9e50e24dcca9e";
 export declare const META_CHARACTERISTIC_UUID = "6e400004b5a3f393e0a9e50e24dcca9e";

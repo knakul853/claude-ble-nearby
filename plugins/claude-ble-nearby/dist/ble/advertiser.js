@@ -1,6 +1,6 @@
 import bleno from '@stoprocent/bleno';
 import { EventEmitter } from 'node:events';
-import { NORDIC_UART_SERVICE_UUID, NORDIC_UART_RX_UUID, NORDIC_UART_TX_UUID, META_CHARACTERISTIC_UUID, } from './constants.js';
+import { NORDIC_UART_SERVICE_UUID, NORDIC_UART_RX_UUID, NORDIC_UART_TX_UUID, META_CHARACTERISTIC_UUID, PEER_NAME_PREFIX, } from './constants.js';
 export class BleAdvertiser extends EventEmitter {
     advertising = false;
     localName;
@@ -49,7 +49,7 @@ export class BleAdvertiser extends EventEmitter {
             characteristics: [rxCharacteristic, txCharacteristic, metaCharacteristic],
         });
         return new Promise((resolve, reject) => {
-            bleno.startAdvertising(this.localName, [NORDIC_UART_SERVICE_UUID], (err) => {
+            bleno.startAdvertising(PEER_NAME_PREFIX + this.localName, [NORDIC_UART_SERVICE_UUID], (err) => {
                 if (err) {
                     reject(err);
                     return;
