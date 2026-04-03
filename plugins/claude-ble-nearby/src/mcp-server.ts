@@ -105,21 +105,20 @@ server.tool('ble_scan', 'Scan for nearby BLE devices. Shows Claude Code peers an
     await scanner.start();
     await advertiser.start();
   }
-  const peers = peerManager.getDiscoveredPeers().map((p) => ({
+  const claudePeers = scanner.getClaudePeers().map((p) => ({
     name: p.name,
     id: p.id,
     rssi: p.rssi,
-    status: p.status,
     claudePeer: true,
   }));
-  const allDevices = scanner.getAllDevices().map((d) => ({
+  const allDevices = (await scanner.scanAllDevices()).map((d) => ({
     name: d.name,
     id: d.id,
     rssi: d.rssi,
     claudePeer: d.isClaudePeer,
   }));
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify({ peers, allDevices, totalDevices: allDevices.length }) }],
+    content: [{ type: 'text' as const, text: JSON.stringify({ claudePeers, allDevices, totalDevices: allDevices.length }) }],
   };
 });
 
