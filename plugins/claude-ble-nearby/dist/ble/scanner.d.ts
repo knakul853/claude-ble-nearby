@@ -10,7 +10,9 @@ export declare class BleScanner extends EventEmitter {
     private scanMode;
     private allDevices;
     private claudePeers;
+    private resolving;
     start(): Promise<void>;
+    private resolvePeerName;
     scanAllDevices(): Promise<DiscoveredPeer[]>;
     getClaudePeers(): DiscoveredPeer[];
     getAllDevices(): DiscoveredPeer[];

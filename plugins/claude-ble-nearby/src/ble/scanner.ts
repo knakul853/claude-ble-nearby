@@ -1,6 +1,6 @@
-import noble from '@stoprocent/noble';
+import noble, { type Peripheral } from '@stoprocent/noble';
 import { EventEmitter } from 'node:events';
-import { NORDIC_UART_SERVICE_UUID, PEER_NAME_PREFIX } from './constants.js';
+import { NORDIC_UART_SERVICE_UUID, META_CHARACTERISTIC_UUID, PEER_NAME_PREFIX } from './constants.js';
 
 export interface DiscoveredPeer {
   id: string;
@@ -14,6 +14,7 @@ export class BleScanner extends EventEmitter {
   private scanMode: 'peers' | 'all' = 'peers';
   private allDevices: Map<string, DiscoveredPeer> = new Map();
   private claudePeers: Map<string, DiscoveredPeer> = new Map();
+  private resolving: Set<string> = new Set();
 
   async start(): Promise<void> {
     if (this.scanning) return;
@@ -24,22 +25,21 @@ export class BleScanner extends EventEmitter {
       const name = peripheral.advertisement.localName;
 
       if (this.scanMode === 'peers') {
-        // UUID-filtered scan: every device here IS a Claude peer
-        // macOS strips localName from background ads, so name may be null
-        const displayName = name
-          ? (name.startsWith(PEER_NAME_PREFIX) ? name.slice(PEER_NAME_PREFIX.length) : name)
-          : `peer-${peripheral.id.slice(0, 8)}`;
+        if (this.claudePeers.has(peripheral.id) || this.resolving.has(peripheral.id)) return;
 
-        const peer: DiscoveredPeer = {
-          id: peripheral.id,
-          name: displayName,
-          rssi: peripheral.rssi,
-          isClaudePeer: true,
-        };
-        this.claudePeers.set(peripheral.id, peer);
-        this.emit('discovered', peer);
+        if (name && name.startsWith(PEER_NAME_PREFIX)) {
+          const peer: DiscoveredPeer = {
+            id: peripheral.id,
+            name: name.slice(PEER_NAME_PREFIX.length),
+            rssi: peripheral.rssi,
+            isClaudePeer: true,
+          };
+          this.claudePeers.set(peripheral.id, peer);
+          this.emit('discovered', peer);
+        } else {
+          this.resolvePeerName(peripheral);
+        }
       } else {
-        // Unfiltered scan: all BLE devices for debug
         if (!name) return;
         const isClaudePeer = name.startsWith(PEER_NAME_PREFIX);
         const displayName = isClaudePeer ? name.slice(PEER_NAME_PREFIX.length) : name;
@@ -52,27 +52,65 @@ export class BleScanner extends EventEmitter {
       }
     });
 
-    // Scan for our service UUID specifically.
-    // On macOS, CoreBluetooth puts custom UUIDs in an "overflow" area
-    // that is ONLY discoverable when scanning with a UUID filter.
     await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
     this.scanMode = 'peers';
     this.scanning = true;
   }
 
+  private async resolvePeerName(peripheral: Peripheral): Promise<void> {
+    this.resolving.add(peripheral.id);
+    try {
+      await peripheral.connectAsync();
+      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
+        [NORDIC_UART_SERVICE_UUID],
+        [META_CHARACTERISTIC_UUID],
+      );
+
+      const metaChar = characteristics.find((c) => c.uuid === META_CHARACTERISTIC_UUID);
+      let peerName = `peer-${peripheral.id.slice(0, 8)}`;
+
+      if (metaChar) {
+        const data = await metaChar.readAsync();
+        try {
+          const meta = JSON.parse(data.toString('utf-8'));
+          if (meta.name) peerName = meta.name;
+        } catch {}
+      }
+
+      await peripheral.disconnectAsync();
+
+      const peer: DiscoveredPeer = {
+        id: peripheral.id,
+        name: peerName,
+        rssi: peripheral.rssi,
+        isClaudePeer: true,
+      };
+      this.claudePeers.set(peripheral.id, peer);
+      this.emit('discovered', peer);
+    } catch {
+      const peer: DiscoveredPeer = {
+        id: peripheral.id,
+        name: `peer-${peripheral.id.slice(0, 8)}`,
+        rssi: peripheral.rssi,
+        isClaudePeer: true,
+      };
+      this.claudePeers.set(peripheral.id, peer);
+      this.emit('discovered', peer);
+    } finally {
+      this.resolving.delete(peripheral.id);
+    }
+  }
+
   async scanAllDevices(): Promise<DiscoveredPeer[]> {
     if (!this.scanning) await this.start();
 
-    // Switch to unfiltered scan briefly to collect all devices
     await noble.stopScanningAsync();
     this.allDevices.clear();
     this.scanMode = 'all';
     await noble.startScanningAsync([], true);
 
-    // Collect for 3 seconds
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Switch back to Claude peer scan
     await noble.stopScanningAsync();
     this.scanMode = 'peers';
     await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
