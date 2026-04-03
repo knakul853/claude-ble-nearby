@@ -1,10 +1,12 @@
-import bleno from '@stoprocent/bleno';
 import { EventEmitter } from 'node:events';
-import { NORDIC_UART_SERVICE_UUID, NORDIC_UART_RX_UUID, NORDIC_UART_TX_UUID, META_CHARACTERISTIC_UUID, PEER_NAME_PREFIX, } from './constants.js';
+import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export class BleAdvertiser extends EventEmitter {
     advertising = false;
     localName;
-    txSubscription = null;
+    child = null;
     constructor(localName) {
         super();
         this.localName = localName;
@@ -12,94 +14,50 @@ export class BleAdvertiser extends EventEmitter {
     async start() {
         if (this.advertising)
             return;
-        await this.waitForPoweredOn();
-        const rxCharacteristic = new bleno.Characteristic({
-            uuid: NORDIC_UART_RX_UUID,
-            properties: ['write', 'writeWithoutResponse'],
-            onWriteRequest: (data, _offset, _withoutResponse, callback) => {
-                this.emit('data', data);
-                callback(bleno.Characteristic.RESULT_SUCCESS);
-            },
-        });
-        let notifyCallback = null;
-        const txCharacteristic = new bleno.Characteristic({
-            uuid: NORDIC_UART_TX_UUID,
-            properties: ['notify'],
-            onSubscribe: (_maxValueSize, updateValueCallback) => {
-                notifyCallback = updateValueCallback;
-                this.txSubscription = updateValueCallback;
-                this.emit('subscribed');
-            },
-            onUnsubscribe: () => {
-                notifyCallback = null;
-                this.txSubscription = null;
-                this.emit('unsubscribed');
-            },
-        });
-        const metaCharacteristic = new bleno.Characteristic({
-            uuid: META_CHARACTERISTIC_UUID,
-            properties: ['read'],
-            onReadRequest: (_offset, callback) => {
-                const meta = JSON.stringify({ name: this.localName, version: '0.1.0' });
-                callback(bleno.Characteristic.RESULT_SUCCESS, Buffer.from(meta, 'utf-8'));
-            },
-        });
-        const service = new bleno.PrimaryService({
-            uuid: NORDIC_UART_SERVICE_UUID,
-            characteristics: [rxCharacteristic, txCharacteristic, metaCharacteristic],
-        });
+        const workerPath = path.join(__dirname, 'advertiser-worker.js');
         return new Promise((resolve, reject) => {
-            bleno.startAdvertising(PEER_NAME_PREFIX + this.localName, [NORDIC_UART_SERVICE_UUID], (err) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                bleno.setServices([service], (err) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
+            const timeout = setTimeout(() => reject(new Error('Advertiser start timeout')), 15_000);
+            this.child = fork(workerPath, [this.localName], { silent: true });
+            this.child.on('message', (msg) => {
+                if (msg.type === 'advertising') {
+                    clearTimeout(timeout);
                     this.advertising = true;
                     resolve();
-                });
+                }
+                else if (msg.type === 'error') {
+                    clearTimeout(timeout);
+                    reject(new Error(msg.message));
+                }
+                else if (msg.type === 'data') {
+                    this.emit('data', Buffer.from(msg.data, 'base64'));
+                }
+            });
+            this.child.on('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+            this.child.on('exit', () => {
+                this.advertising = false;
+                this.child = null;
             });
         });
     }
     async stop() {
-        if (!this.advertising)
+        if (!this.advertising || !this.child)
             return;
-        bleno.stopAdvertising();
+        this.child.send({ type: 'stop' });
+        this.child = null;
         this.advertising = false;
     }
-    sendNotification(data) {
-        if (!this.txSubscription)
-            return false;
-        this.txSubscription(data);
-        return true;
+    sendNotification(_data) {
+        // TODO: implement via IPC once GATT connections are working
+        return false;
     }
     isAdvertising() {
         return this.advertising;
     }
     setLocalName(name) {
         this.localName = name;
-    }
-    waitForPoweredOn() {
-        return new Promise((resolve, reject) => {
-            if (bleno.state === 'poweredOn') {
-                resolve();
-                return;
-            }
-            const timeout = setTimeout(() => {
-                reject(new Error(`BLE adapter state is "${bleno.state}", expected "poweredOn"`));
-            }, 10_000);
-            bleno.once('stateChange', (state) => {
-                clearTimeout(timeout);
-                if (state === 'poweredOn')
-                    resolve();
-                else
-                    reject(new Error(`BLE adapter state changed to "${state}"`));
-            });
-        });
     }
 }
 //# sourceMappingURL=advertiser.js.map

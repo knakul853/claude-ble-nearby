@@ -83,6 +83,8 @@ server.tool('ble_scan', 'Scan for nearby BLE devices. Shows Claude Code peers an
     if (!scanner.isScanning()) {
         await scanner.start();
         await advertiser.start();
+        // Give UUID-filtered scan time to discover peers
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
     const claudePeers = scanner.getClaudePeers().map((p) => ({
         name: p.name,
