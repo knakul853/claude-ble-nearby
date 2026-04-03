@@ -2,7 +2,7 @@
   "mcpServers": {
     "ble-nearby": {
       "command": "bash",
-      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}\" && [ -d node_modules ] || npm install --production --silent && node dist/mcp-server.js"]
+      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT}\" && [ -f node_modules/.rebuild_done ] || (npm rebuild --silent 2>/dev/null && touch node_modules/.rebuild_done) && node dist/mcp-server.js"]
     }
   }
 }

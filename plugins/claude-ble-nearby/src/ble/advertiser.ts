@@ -51,10 +51,19 @@ export class BleAdvertiser extends EventEmitter {
   }
 
   async stop(): Promise<void> {
-    if (!this.advertising || !this.child) return;
-    this.child.send({ type: 'stop' });
-    this.child = null;
-    this.advertising = false;
+    if (!this.child) return;
+    return new Promise<void>((resolve) => {
+      this.child!.on('exit', () => {
+        this.advertising = false;
+        this.child = null;
+        resolve();
+      });
+      this.child!.send({ type: 'stop' });
+      setTimeout(() => {
+        if (this.child) { this.child.kill(); this.child = null; this.advertising = false; }
+        resolve();
+      }, 2000);
+    });
   }
 
   sendNotification(_data: Buffer): boolean {

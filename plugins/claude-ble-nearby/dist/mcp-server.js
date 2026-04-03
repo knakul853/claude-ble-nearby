@@ -80,9 +80,9 @@ server.tool('ble_status', 'Get BLE adapter and connection status', {}, async () 
     ],
 }));
 server.tool('ble_scan', 'Scan for nearby BLE devices. Shows Claude Code peers and all other BLE devices.', {}, async () => {
-    if (!advertiser.isAdvertising()) {
-        await advertiser.start();
-    }
+    // macOS: bleno and noble can't coexist — stop advertising while scanning
+    await advertiser.stop();
+    await new Promise(resolve => setTimeout(resolve, 500));
     const claudePeers = (await scanner.scanForPeers(5000)).map((p) => ({
         name: p.name,
         id: p.id,
@@ -95,6 +95,8 @@ server.tool('ble_scan', 'Scan for nearby BLE devices. Shows Claude Code peers an
         rssi: d.rssi,
         claudePeer: d.isClaudePeer,
     }));
+    // Restart advertising after scan
+    advertiser.start().catch(() => { });
     return {
         content: [{ type: 'text', text: JSON.stringify({ claudePeers, allDevices, totalDevices: allDevices.length }) }],
     };

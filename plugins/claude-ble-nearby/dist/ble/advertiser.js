@@ -43,11 +43,24 @@ export class BleAdvertiser extends EventEmitter {
         });
     }
     async stop() {
-        if (!this.advertising || !this.child)
+        if (!this.child)
             return;
-        this.child.send({ type: 'stop' });
-        this.child = null;
-        this.advertising = false;
+        return new Promise((resolve) => {
+            this.child.on('exit', () => {
+                this.advertising = false;
+                this.child = null;
+                resolve();
+            });
+            this.child.send({ type: 'stop' });
+            setTimeout(() => {
+                if (this.child) {
+                    this.child.kill();
+                    this.child = null;
+                    this.advertising = false;
+                }
+                resolve();
+            }, 2000);
+        });
     }
     sendNotification(_data) {
         // TODO: implement via IPC once GATT connections are working

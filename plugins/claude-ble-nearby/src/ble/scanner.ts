@@ -91,45 +91,48 @@ export class BleScanner extends EventEmitter {
     });
   }
 
-  private async resolvePeerName(peripheral: Peripheral): Promise<void> {
+  private resolvePeerName(peripheral: Peripheral): void {
     this.resolving.add(peripheral.id);
-    let peerName = peripheral.advertisement.localName || `peer-${peripheral.id.slice(0, 8)}`;
+    const baseName = peripheral.advertisement.localName || `peer-${peripheral.id.slice(0, 8)}`;
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      await peripheral.connectAsync();
-      clearTimeout(timeout);
+    const addPeer = (name: string) => {
+      this.resolving.delete(peripheral.id);
+      const peer: DiscoveredPeer = {
+        id: peripheral.id,
+        name,
+        rssi: peripheral.rssi,
+        isClaudePeer: true,
+      };
+      this.claudePeers.set(peripheral.id, peer);
+      this.emit('discovered', peer);
+    };
 
+    const gattTimeout = setTimeout(() => {
+      peripheral.disconnectAsync().catch(() => {});
+      addPeer(baseName);
+    }, 3000);
+
+    peripheral.connectAsync().then(async () => {
       const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
         [NORDIC_UART_SERVICE_UUID],
         [META_CHARACTERISTIC_UUID],
       );
-
       const metaChar = characteristics.find((c) => c.uuid === META_CHARACTERISTIC_UUID);
+      let name = baseName;
       if (metaChar) {
         const data = await metaChar.readAsync();
         try {
           const meta = JSON.parse(data.toString('utf-8'));
-          if (meta.name) peerName = meta.name;
+          if (meta.name) name = meta.name;
         } catch {}
       }
-
       await peripheral.disconnectAsync();
-    } catch {
-      // GATT connect failed — use whatever name we have
-    } finally {
-      this.resolving.delete(peripheral.id);
-    }
-
-    const peer: DiscoveredPeer = {
-      id: peripheral.id,
-      name: peerName,
-      rssi: peripheral.rssi,
-      isClaudePeer: true,
-    };
-    this.claudePeers.set(peripheral.id, peer);
-    this.emit('discovered', peer);
+      clearTimeout(gattTimeout);
+      addPeer(name);
+    }).catch(() => {
+      clearTimeout(gattTimeout);
+      addPeer(baseName);
+    });
   }
 
   getClaudePeers(): DiscoveredPeer[] {
