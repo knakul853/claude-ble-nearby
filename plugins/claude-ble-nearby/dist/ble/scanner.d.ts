@@ -6,17 +6,15 @@ export interface DiscoveredPeer {
     isClaudePeer?: boolean;
 }
 export declare class BleScanner extends EventEmitter {
-    private scanning;
-    private scanMode;
-    private allDevices;
+    private ready;
     private claudePeers;
     private resolving;
-    start(): Promise<void>;
+    ensureReady(): Promise<void>;
+    private isClaudePeerPeripheral;
+    scanForPeers(durationMs?: number): Promise<DiscoveredPeer[]>;
+    scanAllDevices(durationMs?: number): Promise<DiscoveredPeer[]>;
     private resolvePeerName;
-    scanAllDevices(): Promise<DiscoveredPeer[]>;
     getClaudePeers(): DiscoveredPeer[];
-    getAllDevices(): DiscoveredPeer[];
-    stop(): Promise<void>;
     isScanning(): boolean;
     getAdapterState(): string;
     private waitForPoweredOn;

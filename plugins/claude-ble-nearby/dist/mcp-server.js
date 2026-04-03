@@ -80,19 +80,16 @@ server.tool('ble_status', 'Get BLE adapter and connection status', {}, async () 
     ],
 }));
 server.tool('ble_scan', 'Scan for nearby BLE devices. Shows Claude Code peers and all other BLE devices.', {}, async () => {
-    if (!scanner.isScanning()) {
-        await scanner.start();
+    if (!advertiser.isAdvertising()) {
         await advertiser.start();
-        // Give UUID-filtered scan time to discover peers
-        await new Promise(resolve => setTimeout(resolve, 3000));
     }
-    const claudePeers = scanner.getClaudePeers().map((p) => ({
+    const claudePeers = (await scanner.scanForPeers(5000)).map((p) => ({
         name: p.name,
         id: p.id,
         rssi: p.rssi,
         claudePeer: true,
     }));
-    const allDevices = (await scanner.scanAllDevices()).map((d) => ({
+    const allDevices = (await scanner.scanAllDevices(3000)).map((d) => ({
         name: d.name,
         id: d.id,
         rssi: d.rssi,
@@ -221,7 +218,6 @@ server.tool('ble_unpair', 'Remove a peer from the trusted list', { peerId: z.str
 });
 async function main() {
     try {
-        await scanner.start();
         await advertiser.start();
     }
     catch (err) {

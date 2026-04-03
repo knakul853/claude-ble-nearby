@@ -2,20 +2,31 @@ import noble from '@stoprocent/noble';
 import { EventEmitter } from 'node:events';
 import { NORDIC_UART_SERVICE_UUID, META_CHARACTERISTIC_UUID, PEER_NAME_PREFIX } from './constants.js';
 export class BleScanner extends EventEmitter {
-    scanning = false;
-    scanMode = 'peers';
-    allDevices = new Map();
+    ready = false;
     claudePeers = new Map();
     resolving = new Set();
-    async start() {
-        if (this.scanning)
+    async ensureReady() {
+        if (this.ready)
             return;
         await this.waitForPoweredOn();
-        noble.on('discover', (peripheral) => {
-            const name = peripheral.advertisement.localName;
-            if (this.scanMode === 'peers') {
+        this.ready = true;
+    }
+    isClaudePeerPeripheral(peripheral) {
+        const name = peripheral.advertisement.localName;
+        if (name && name.startsWith(PEER_NAME_PREFIX))
+            return true;
+        const uuids = peripheral.advertisement.serviceUuids || [];
+        return uuids.includes(NORDIC_UART_SERVICE_UUID);
+    }
+    async scanForPeers(durationMs = 5000) {
+        await this.ensureReady();
+        return new Promise(async (resolve) => {
+            const onDiscover = (peripheral) => {
+                if (!this.isClaudePeerPeripheral(peripheral))
+                    return;
                 if (this.claudePeers.has(peripheral.id) || this.resolving.has(peripheral.id))
                     return;
+                const name = peripheral.advertisement.localName;
                 if (name && name.startsWith(PEER_NAME_PREFIX)) {
                     const peer = {
                         id: peripheral.id,
@@ -29,31 +40,52 @@ export class BleScanner extends EventEmitter {
                 else {
                     this.resolvePeerName(peripheral);
                 }
-            }
-            else {
+            };
+            noble.on('discover', onDiscover);
+            await noble.startScanningAsync([], true);
+            setTimeout(async () => {
+                await noble.stopScanningAsync();
+                noble.removeListener('discover', onDiscover);
+                resolve(Array.from(this.claudePeers.values()));
+            }, durationMs);
+        });
+    }
+    async scanAllDevices(durationMs = 3000) {
+        await this.ensureReady();
+        const devices = new Map();
+        return new Promise(async (resolve) => {
+            const onDiscover = (peripheral) => {
+                const name = peripheral.advertisement.localName;
                 if (!name)
                     return;
-                const isClaudePeer = name.startsWith(PEER_NAME_PREFIX);
-                const displayName = isClaudePeer ? name.slice(PEER_NAME_PREFIX.length) : name;
-                this.allDevices.set(peripheral.id, {
+                const isClaudePeer = this.isClaudePeerPeripheral(peripheral);
+                const displayName = (name.startsWith(PEER_NAME_PREFIX)) ? name.slice(PEER_NAME_PREFIX.length) : name;
+                devices.set(peripheral.id, {
                     id: peripheral.id,
                     name: displayName,
                     rssi: peripheral.rssi,
                     isClaudePeer,
                 });
-            }
+            };
+            noble.on('discover', onDiscover);
+            await noble.startScanningAsync([], true);
+            setTimeout(async () => {
+                await noble.stopScanningAsync();
+                noble.removeListener('discover', onDiscover);
+                resolve(Array.from(devices.values()));
+            }, durationMs);
         });
-        await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
-        this.scanMode = 'peers';
-        this.scanning = true;
     }
     async resolvePeerName(peripheral) {
         this.resolving.add(peripheral.id);
+        let peerName = peripheral.advertisement.localName || `peer-${peripheral.id.slice(0, 8)}`;
         try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
             await peripheral.connectAsync();
+            clearTimeout(timeout);
             const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync([NORDIC_UART_SERVICE_UUID], [META_CHARACTERISTIC_UUID]);
             const metaChar = characteristics.find((c) => c.uuid === META_CHARACTERISTIC_UUID);
-            let peerName = `peer-${peripheral.id.slice(0, 8)}`;
             if (metaChar) {
                 const data = await metaChar.readAsync();
                 try {
@@ -64,57 +96,27 @@ export class BleScanner extends EventEmitter {
                 catch { }
             }
             await peripheral.disconnectAsync();
-            const peer = {
-                id: peripheral.id,
-                name: peerName,
-                rssi: peripheral.rssi,
-                isClaudePeer: true,
-            };
-            this.claudePeers.set(peripheral.id, peer);
-            this.emit('discovered', peer);
         }
         catch {
-            const peer = {
-                id: peripheral.id,
-                name: `peer-${peripheral.id.slice(0, 8)}`,
-                rssi: peripheral.rssi,
-                isClaudePeer: true,
-            };
-            this.claudePeers.set(peripheral.id, peer);
-            this.emit('discovered', peer);
+            // GATT connect failed — use whatever name we have
         }
         finally {
             this.resolving.delete(peripheral.id);
         }
-    }
-    async scanAllDevices() {
-        if (!this.scanning)
-            await this.start();
-        await noble.stopScanningAsync();
-        this.allDevices.clear();
-        this.scanMode = 'all';
-        await noble.startScanningAsync([], true);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await noble.stopScanningAsync();
-        this.scanMode = 'peers';
-        await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
-        return Array.from(this.allDevices.values());
+        const peer = {
+            id: peripheral.id,
+            name: peerName,
+            rssi: peripheral.rssi,
+            isClaudePeer: true,
+        };
+        this.claudePeers.set(peripheral.id, peer);
+        this.emit('discovered', peer);
     }
     getClaudePeers() {
         return Array.from(this.claudePeers.values());
     }
-    getAllDevices() {
-        return Array.from(this.allDevices.values());
-    }
-    async stop() {
-        if (!this.scanning)
-            return;
-        await noble.stopScanningAsync();
-        noble.removeAllListeners('discover');
-        this.scanning = false;
-    }
     isScanning() {
-        return this.scanning;
+        return this.ready;
     }
     getAdapterState() {
         return noble.state;

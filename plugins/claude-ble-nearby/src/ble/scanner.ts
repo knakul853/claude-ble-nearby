@@ -10,23 +10,32 @@ export interface DiscoveredPeer {
 }
 
 export class BleScanner extends EventEmitter {
-  private scanning = false;
-  private scanMode: 'peers' | 'all' = 'peers';
-  private allDevices: Map<string, DiscoveredPeer> = new Map();
+  private ready = false;
   private claudePeers: Map<string, DiscoveredPeer> = new Map();
   private resolving: Set<string> = new Set();
 
-  async start(): Promise<void> {
-    if (this.scanning) return;
-
+  async ensureReady(): Promise<void> {
+    if (this.ready) return;
     await this.waitForPoweredOn();
+    this.ready = true;
+  }
 
-    noble.on('discover', (peripheral) => {
-      const name = peripheral.advertisement.localName;
+  private isClaudePeerPeripheral(peripheral: Peripheral): boolean {
+    const name = peripheral.advertisement.localName;
+    if (name && name.startsWith(PEER_NAME_PREFIX)) return true;
+    const uuids = peripheral.advertisement.serviceUuids || [];
+    return uuids.includes(NORDIC_UART_SERVICE_UUID);
+  }
 
-      if (this.scanMode === 'peers') {
+  async scanForPeers(durationMs = 5000): Promise<DiscoveredPeer[]> {
+    await this.ensureReady();
+
+    return new Promise(async (resolve) => {
+      const onDiscover = (peripheral: Peripheral) => {
+        if (!this.isClaudePeerPeripheral(peripheral)) return;
         if (this.claudePeers.has(peripheral.id) || this.resolving.has(peripheral.id)) return;
 
+        const name = peripheral.advertisement.localName;
         if (name && name.startsWith(PEER_NAME_PREFIX)) {
           const peer: DiscoveredPeer = {
             id: peripheral.id,
@@ -39,36 +48,65 @@ export class BleScanner extends EventEmitter {
         } else {
           this.resolvePeerName(peripheral);
         }
-      } else {
+      };
+
+      noble.on('discover', onDiscover);
+      await noble.startScanningAsync([], true);
+
+      setTimeout(async () => {
+        await noble.stopScanningAsync();
+        noble.removeListener('discover', onDiscover);
+        resolve(Array.from(this.claudePeers.values()));
+      }, durationMs);
+    });
+  }
+
+  async scanAllDevices(durationMs = 3000): Promise<DiscoveredPeer[]> {
+    await this.ensureReady();
+
+    const devices: Map<string, DiscoveredPeer> = new Map();
+
+    return new Promise(async (resolve) => {
+      const onDiscover = (peripheral: Peripheral) => {
+        const name = peripheral.advertisement.localName;
         if (!name) return;
-        const isClaudePeer = name.startsWith(PEER_NAME_PREFIX);
-        const displayName = isClaudePeer ? name.slice(PEER_NAME_PREFIX.length) : name;
-        this.allDevices.set(peripheral.id, {
+        const isClaudePeer = this.isClaudePeerPeripheral(peripheral);
+        const displayName = (name.startsWith(PEER_NAME_PREFIX)) ? name.slice(PEER_NAME_PREFIX.length) : name;
+        devices.set(peripheral.id, {
           id: peripheral.id,
           name: displayName,
           rssi: peripheral.rssi,
           isClaudePeer,
         });
-      }
-    });
+      };
 
-    await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
-    this.scanMode = 'peers';
-    this.scanning = true;
+      noble.on('discover', onDiscover);
+      await noble.startScanningAsync([], true);
+
+      setTimeout(async () => {
+        await noble.stopScanningAsync();
+        noble.removeListener('discover', onDiscover);
+        resolve(Array.from(devices.values()));
+      }, durationMs);
+    });
   }
 
   private async resolvePeerName(peripheral: Peripheral): Promise<void> {
     this.resolving.add(peripheral.id);
+    let peerName = peripheral.advertisement.localName || `peer-${peripheral.id.slice(0, 8)}`;
+
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
       await peripheral.connectAsync();
+      clearTimeout(timeout);
+
       const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
         [NORDIC_UART_SERVICE_UUID],
         [META_CHARACTERISTIC_UUID],
       );
 
       const metaChar = characteristics.find((c) => c.uuid === META_CHARACTERISTIC_UUID);
-      let peerName = `peer-${peripheral.id.slice(0, 8)}`;
-
       if (metaChar) {
         const data = await metaChar.readAsync();
         try {
@@ -78,63 +116,28 @@ export class BleScanner extends EventEmitter {
       }
 
       await peripheral.disconnectAsync();
-
-      const peer: DiscoveredPeer = {
-        id: peripheral.id,
-        name: peerName,
-        rssi: peripheral.rssi,
-        isClaudePeer: true,
-      };
-      this.claudePeers.set(peripheral.id, peer);
-      this.emit('discovered', peer);
     } catch {
-      const peer: DiscoveredPeer = {
-        id: peripheral.id,
-        name: `peer-${peripheral.id.slice(0, 8)}`,
-        rssi: peripheral.rssi,
-        isClaudePeer: true,
-      };
-      this.claudePeers.set(peripheral.id, peer);
-      this.emit('discovered', peer);
+      // GATT connect failed — use whatever name we have
     } finally {
       this.resolving.delete(peripheral.id);
     }
-  }
 
-  async scanAllDevices(): Promise<DiscoveredPeer[]> {
-    if (!this.scanning) await this.start();
-
-    await noble.stopScanningAsync();
-    this.allDevices.clear();
-    this.scanMode = 'all';
-    await noble.startScanningAsync([], true);
-
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    await noble.stopScanningAsync();
-    this.scanMode = 'peers';
-    await noble.startScanningAsync([NORDIC_UART_SERVICE_UUID], true);
-
-    return Array.from(this.allDevices.values());
+    const peer: DiscoveredPeer = {
+      id: peripheral.id,
+      name: peerName,
+      rssi: peripheral.rssi,
+      isClaudePeer: true,
+    };
+    this.claudePeers.set(peripheral.id, peer);
+    this.emit('discovered', peer);
   }
 
   getClaudePeers(): DiscoveredPeer[] {
     return Array.from(this.claudePeers.values());
   }
 
-  getAllDevices(): DiscoveredPeer[] {
-    return Array.from(this.allDevices.values());
-  }
-
-  async stop(): Promise<void> {
-    if (!this.scanning) return;
-    await noble.stopScanningAsync();
-    noble.removeAllListeners('discover');
-    this.scanning = false;
-  }
-
   isScanning(): boolean {
-    return this.scanning;
+    return this.ready;
   }
 
   getAdapterState(): string {
